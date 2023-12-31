@@ -1,0 +1,75 @@
+<h1>Web API Export Example</h1>
+<ul>
+  <li><button id="take-screenshot">Take screenshot</button></li>
+  <li><button id="take-pdf" disabled>Take PDF</button></li>
+  <li><button id="print-page" disabled>Print page</button></li>
+</ul>
+<div id="output"></div>
+<iframe
+  id="sketchboard"
+  width="1024"
+  height="768"
+  frameborder="0"
+  allow="web-share; clipboard-read; clipboard-write"
+></iframe>
+
+<script>
+  const whiteboard_link = 'https://api.draw.chat/v1/open';
+  const sketchpadOrigin = 'https://draw.chat';
+  const sketchboardIFrame = document.getElementById('sketchboard');
+  sketchboardIFrame.src = whiteboard_link;
+  const saveBtnEl = document.getElementById('take-screenshot');
+  const outputEl = document.getElementById('output');
+
+  // Upload file to PHP
+  function uploadFile(name, file) {
+    const formData = new FormData();
+    const xhttp = new XMLHttpRequest();
+    formData.append(name, file);
+    xhttp.open('POST', 'save_image.php', true);
+    xhttp.send(formData);
+  }
+
+  let response_id = 0;
+
+  function getResponseId(response_id) {
+    return 'drawchat_webapi_response_' + response_id;
+  }
+
+  // Receive response message from Sketchboard
+  window.addEventListener('message', (ev) => {
+    if (ev.origin !== sketchpadOrigin) {
+      // drop other messages
+      return;
+    }
+    if (ev.data?.response_id !== getResponseId(response_id)) {
+      // drop answers from old inquiries
+      return;
+    }
+    // display received file
+    const imgEl = document.createElement('img');
+    Object.assign(imgEl, {
+      src: ev.data.file_dataurl,
+      width: 768,
+      border: 8,
+    });
+    outputEl.innerHTML = '';
+    outputEl.appendChild(imgEl);
+    // send received file
+    uploadFile('screenshot', ev.data.file);
+  });
+
+  // attach event to the save button
+  saveBtnEl.addEventListener('click', (ev) => {
+    sketchboardIFrame.contentWindow.postMessage(
+      {
+        response_id: getResponseId(++response_id), // you will receive this value in response to a query
+        command: 'take-screenshot',
+        params: {
+          mimeType: 'image/jpeg', // 'image/png' is default
+        },
+      },
+      sketchpadOrigin,
+    );
+  });
+</script>
