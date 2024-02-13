@@ -1,0 +1,270 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Video Recorder Example - Recording a Sketch with Audio from Microphone</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      #record-button {
+        padding: 8px 32px;
+      }
+      .recording {
+        background: red;
+        color: white;
+      }
+      .ready {
+        background: green;
+        color: white;
+      }
+      .uploading {
+        background: blue;
+        color: white;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="recorder-controls">
+      <button id="record-button" class="ready">Start recording</button>
+    </div>
+    <div class="sketchboard-outer">
+      <iframe
+        id="sketchboard"
+        width="1366"
+        height="768"
+        frameborder="0"
+        allow="web-share; clipboard-read; clipboard-write"
+      ></iframe>
+    </div>
+    <script>
+      const VIDEO_WIDTH = 1366;
+      const VIDEO_HEIGHT = 768;
+      const VIDEO_FPS = 30;
+      const MAX_FILE_SIZE = 1024 * 1024 * 512; // 512 MB
+      const whiteboard_link =
+        new URLSearchParams(location.search).get('drawchat_link') ||
+        'https://api.draw.chat/v1/open';
+      const sketchpadOrigin = 'https://draw.chat';
+      const sketchboardIFrame = document.getElementById('sketchboard');
+
+      Object.assign(sketchboardIFrame, {
+        src: whiteboard_link,
+        allow: 'web-share; clipboard-read; clipboard-write',
+        width: VIDEO_WIDTH,
+        height: VIDEO_HEIGHT,
+      });
+      const uploaderUrl = 'upload.php';
+
+      let isRecording = false;
+      let mediaRecorder;
+      let recordedChunks = [];
+      const BTN_MSG_TIMEOUT = 1000;
+      const recordButton = document.getElementById('record-button');
+
+      const recorderReady = () => {
+        recordedChunks = [];
+        recordButton.disabled = false;
+        isRecording = false;
+        clearInterval(recordingTickerInterval);
+        Object.assign(recordButton, {
+          textContent: 'Start recording',
+          className: 'ready',
+        });
+      };
+      const uploadProgress = (ev) => {
+        const p = ev.loaded / ev.total;
+        Object.assign(recordButton, {
+          textContent: `Uploading ${Math.round(p * 100)}%`,
+          className: 'uploading',
+        });
+      };
+      const uploadFailed = () => {
+        Object.assign(recordButton, {
+          textContent: 'Upload failed :(',
+          className: 'uploading',
+        });
+        setTimeout(recorderReady, BTN_MSG_TIMEOUT);
+      };
+      const uploadComplete = () => {
+        Object.assign(recordButton, {
+          textContent: 'Upload complete!',
+          className: 'uploading',
+        });
+        setTimeout(recorderReady, BTN_MSG_TIMEOUT);
+        alert('Upload complete!');
+      };
+      const uploadCanceled = () => {
+        Object.assign(recordButton, {
+          textContent: 'Upload canceled',
+          className: 'uploading',
+        });
+        setTimeout(recorderReady, BTN_MSG_TIMEOUT);
+      };
+      const uploadLoadend = () => {
+        Object.assign(recordButton, {
+          textContent: 'Upload end',
+          className: 'uploading',
+        });
+        setTimeout(recorderReady, BTN_MSG_TIMEOUT);
+      };
+      const uploadFile = (fileObj) => {
+        recordButton.disabled = true;
+        const formData = new FormData();
+        formData.append('MAX_FILE_SIZE', MAX_FILE_SIZE);
+        formData.append('video', fileObj);
+        const xhr = new XMLHttpRequest();
+        xhr.upload.addEventListener('progress', uploadProgress, false);
+        xhr.addEventListener('load', uploadComplete, false);
+        xhr.addEventListener('error', uploadFailed, false);
+        xhr.addEventListener('abort', uploadCanceled, false);
+        xhr.addEventListener('loadend', uploadLoadend, false);
+        xhr.open('POST', uploaderUrl, true);
+        xhr.send(formData);
+      };
+
+      let recordingTicker = 0;
+      let recordingTickerInterval;
+      const updateRecordingButtonLabel = () => {
+        recordingTicker = (recordingTicker + 1) % 4;
+        Object.assign(recordButton, {
+          textContent: `Stop recording${'.'.repeat(recordingTicker)}`,
+          className: 'recording',
+        });
+      };
+
+      const stopRecording = () => {
+        isRecording = false;
+        if (mediaRecorder.state !== 'inactive') {
+          mediaRecorder.stop();
+        }
+      };
+
+      let response_id = 0;
+      const videoCanvas = document.createElement('canvas');
+      Object.assign(videoCanvas, {
+        width: VIDEO_WIDTH,
+        height: VIDEO_HEIGHT,
+      });
+      const videoCanvasContext2d = videoCanvas.getContext('2d');
+
+      const drawScreenshotOnVideoCanvas = (img) => {
+        const canvasAspectRatio = videoCanvas.width / videoCanvas.height;
+        const imageAspectRatio = img.width / img.height;
+
+        let drawWidth, drawHeight, offsetX, offsetY;
+
+        if (imageAspectRatio > canvasAspectRatio) {
+          drawWidth = videoCanvas.width;
+          drawHeight = videoCanvas.width / imageAspectRatio;
+          offsetX = 0;
+          offsetY = (videoCanvas.height - drawHeight) / 2;
+        } else {
+          drawHeight = videoCanvas.height;
+          drawWidth = videoCanvas.height * imageAspectRatio;
+          offsetY = 0;
+          offsetX = (videoCanvas.width - drawWidth) / 2;
+        }
+        videoCanvasContext2d.clearRect(0, 0, videoCanvas.width, videoCanvas.height);
+        videoCanvasContext2d.drawImage(
+          img,
+          0,
+          0,
+          img.width,
+          img.height,
+          offsetX,
+          offsetY,
+          drawWidth,
+          drawHeight,
+        );
+      };
+
+      function getResponseId(response_id) {
+        return 'drawchat_webapi_response_' + response_id;
+      }
+
+      const getScreenshot = () => {
+        sketchboardIFrame.contentWindow.postMessage(
+          {
+            response_id: getResponseId(++response_id), // you will receive this value in response to a query
+            command: 'take-screenshot',
+            params: {
+              mimeType: 'image/png',
+            },
+          },
+          sketchpadOrigin,
+        );
+      };
+
+      // Receive response message from Sketchboard
+      window.addEventListener('message', (ev) => {
+        if (ev.origin !== sketchpadOrigin) {
+          // drop other messages
+          return;
+        }
+        if (ev.data?.response_id !== getResponseId(response_id)) {
+          // drop answers from old inquiries
+          return;
+        }
+        // draw received frame on video canvas
+        const img = new Image();
+        img.onload = () => drawScreenshotOnVideoCanvas(img);
+        img.src = ev.data.file_dataurl;
+        if (isRecording) {
+          // ask for next frame
+          getScreenshot();
+        }
+      });
+
+      const startRecording = async () => {
+        recordedChunks = [];
+        isRecording = true;
+
+        updateRecordingButtonLabel();
+        recordingTickerInterval = setInterval(updateRecordingButtonLabel, 300);
+
+        let screenStream, audioStream;
+        try {
+          screenStream = videoCanvas.captureStream(VIDEO_FPS);
+          audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (error) {
+          alert(`Error getting media: ${error.message}`);
+          recorderReady();
+          return;
+        }
+        const combinedStream = new MediaStream();
+        audioStream.getTracks().forEach((track) => combinedStream.addTrack(track));
+        screenStream.getTracks().forEach((track) => {
+          combinedStream.addTrack(track);
+          track.onended = () => {
+            stopRecording();
+          };
+        });
+        combinedStream.getTracks().forEach((track) => console.log('combinedStream track', track));
+        mediaRecorder = new MediaRecorder(combinedStream);
+        mediaRecorder.onerror = (error) => console.error('Error mediaRecorder:', error);
+        screenStream.onerror = (error) => console.error('Error screenStream:', error);
+        audioStream.onerror = (error) => console.error('Error audioStream:', error);
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            recordedChunks.push(event.data);
+          }
+        };
+        mediaRecorder.onstop = () => {
+          audioStream.getTracks().forEach((track) => track.stop());
+          const blob = new Blob(recordedChunks, { type: 'video/webm' });
+          const file = new File([blob], 'recorder.webm', { type: 'video/webm' });
+          uploadFile(file);
+        };
+        mediaRecorder.start();
+        getScreenshot();
+      };
+
+      recordButton.addEventListener('click', () => {
+        if (!isRecording) {
+          startRecording();
+        } else {
+          stopRecording();
+        }
+      });
+    </script>
+  </body>
+</html>
