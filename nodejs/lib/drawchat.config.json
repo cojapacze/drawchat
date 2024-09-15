@@ -1,0 +1,22 @@
+{
+  "globalPublicSalt": "mZ2s2NoggXpAykMoPz8PVWBiUuFJfYjXyvo8r3JRUY8uoL7vQQmnVVFDs2AitieqxuDCGuvJCd9oWFfcdEbBHnMPNT3zKpn8YPXf_465bd28bfcb961a1",
+  "tokenPrefixDefault": "dc2",
+  "tokenPrefixDeterministic": "dc3",
+  "tokenPrefixECDSA": "dc5",
+  "validTokens": [
+    "^([sd][nc]2)([a-z0-9]{27})~([0][0][0-1][0-9a-f]{61})$",
+    "^([sd][nc]3)([a-z0-9]{27})~([0-9a-f][0-9a-f][0][0][0-9a-f]{60})",
+    "^([sd][nc]5)([a-z0-9]{27})~([0-9a-f][0-9a-f][0][0][0-9a-f]{60})"
+  ],
+  "site": {
+    "name": "draw.chat",
+    "protocol": "https",
+    "middleHost": "draw.chat",
+    "webAPIOpenURL": "https://lan.draw.chat/v1/open"
+  },
+  "server": {
+    "sketchpadProtocol": "wss://",
+    "sketchpadServerPrefix": "ws",
+    "sketchpadServerSuffix": ".draw.chat"
+  }
+}
